@@ -1,0 +1,44 @@
+# Подстраховка на случай, когда компьютер выключен.
+# Каждые 5 минут проверяет ящик и шлёт в Telegram письма, которые компьютер не отправил за 3 минуты.
+# Пароли берутся из Settings -> Secrets and variables -> Actions.
+name: check-mail
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+    - cron: "17 4 * * 1"   # раз в неделю: не дать GitHub отключить расписание через 60 дней тишины
+  workflow_dispatch:
+
+concurrency:
+  group: check-mail
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: write   # нужно только шагу keepalive
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check mailbox
+        env:
+          IMAP_HOST: ${{ secrets.IMAP_HOST }}
+          IMAP_PORT: ${{ secrets.IMAP_PORT }}
+          IMAP_SSL: ${{ secrets.IMAP_SSL }}
+          IMAP_USER: ${{ secrets.IMAP_USER }}
+          IMAP_PASSWORD: ${{ secrets.IMAP_PASSWORD }}
+          IMAP_FOLDERS: ${{ secrets.IMAP_FOLDERS }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          PREVIEW_CHARS: ${{ secrets.PREVIEW_CHARS }}
+        run: python3 mail_to_telegram.py --once --min-age 180
+
+      - name: Keepalive
+        if: github.event.schedule == '17 4 * * 1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/check-mail.yml/enable"
